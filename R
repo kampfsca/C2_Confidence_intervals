@@ -1,0 +1,98 @@
+
+
+CIs <- function(n,N,p,c.level){
+
+freq <- rbinom(N, n, p) # generate a mock-sampling distribution
+
+p.hat <- freq/n # calculate the sample proportions for each
+
+conf <- sapply(c.level, function(x) x/100) # Converting the confidence levels
+
+z.star <- sapply(conf, function(x){qnorm((1-((1-x)/2)),0,1)}) # Finding z-star
+
+lb <- sapply(z.star, function(x){p.hat-(x*(sqrt((p.hat*(1-p.hat))/n)))}) # Upper-Bound
+ub <- sapply(z.star, function(x){p.hat+(x*(sqrt((p.hat*(1-p.hat))/n)))}) # Lower-Bound
+
+names <- c(rep("lb", length(z.star)), rep("ub", length(z.star))) # Column Names
+
+library(ggplot2)
+library(tint)
+library(hrbrthemes)
+library(tidyr)
+library(dplyr)
+library(gridExtra)
+
+id <- seq(1,N,1)
+df <- as.data.frame(cbind(id, p.hat, lb, ub))
+colnames(df) <- c("id", "p.hat", paste(names, c.level, sep = "_"))
+
+
+df <-  df %>% 
+  pivot_longer(., -c(id, p.hat), names_to = "interval") %>%  
+  separate(interval, into = c("bound", "level"), sep = "_") %>% 
+  pivot_wider(names_from = bound, values_from = value)
+
+df$level <- paste(paste(df$level, "%", sep = ""), "Confidence", sep = " ")
+df$correct <- ifelse(df$lb > p | df$ub < p, "Incorrect", "Correct")
+
+plot <- ggplot(df, aes(group = id), color = correct)+
+  geom_segment(aes(x = lb, xend = ub, y = id, yend = id, color = correct ))+
+  geom_point(aes(x = lb, y = id, group = id), size = 1, alpha = 0.5)+
+  geom_point(aes(x = ub, y = id, group = id), size = 1, alpha = 0.5)+
+  geom_vline(xintercept = p, size = 1.0, alpha = 0.7)+
+  scale_x_continuous(breaks = seq(0,1,0.10), limits = c(0,1))+
+  scale_color_manual(aesthetics = "color", 
+                     values = wesanderson::wes_palette("Zissou1",2,"continuous"))+
+  theme_bw()+
+  theme(legend.position = "bottom")+
+  facet_wrap(~level)+
+  labs(title = "Results of Random Confidence Intervals",
+       y = "Record ID",
+       x = "Proportion",
+       color = "Result")
+
+pal <- wesanderson::wes_palette("Zissou1",10, "continuous") # Setting the Palette for Hist
+
+plot.hist <- ggplot(df, aes(x = p.hat))+
+  geom_histogram(aes(y = ..density..),stat = "bin", position = "stack", 
+                 bins = diff(range(p.hat)) / (2 * IQR(p.hat) / length(p.hat)^(1/3)),
+                 fill = pal[3],
+                 color = pal[6], alpha = .95, size = 1)+
+  geom_density(adjust = 1.6, color = pal[9], size = 1, alpha = .3)+
+  theme_bw()+
+  theme(axis.title = element_blank())+
+  labs(title = "Sampling Distribution of p-hat")
+
+t <- as.data.frame(table(df$level, df$correct))
+t <- pivot_wider(t, names_from = Var2, values_from = Freq)
+t$rate <- (t$Incorrect/N)*100
+colnames(t)<- c("z*", "Correct", "Incorrect", "Error-Rate (%)")
+
+
+table <- tableGrob(t, rows = NULL, 
+                   theme = ttheme_minimal(base_family = "Roboto Condensed",
+                                          base_size = 12,
+                                          padding = unit(c(1,1), "mm")))
+
+# t2 <- df %>% 
+#   group_by(level) %>% 
+#   summarise(min.diff = min(ub-lb),
+#             max.diff = max(ub-lb),
+#             mean.diff = mean(ub-lb)) %>% 
+#   as.data.frame
+# 
+# table2 <- tableGrob(t2, rows = NULL, 
+#                    theme = ttheme_minimal(base_family = "Roboto Condensed",
+#                                           base_size = 12,
+#                                           padding = unit(c(1,1), "mm")))
+grid.arrange(plot, 
+             table, plot.hist, 
+             ncol = 2, nrow = 2,
+             as.table=TRUE, heights = c(2,1),
+             layout_matrix = rbind(c(1,1),c(3,4)))
+
+}
+
+CIs(1000,100,0.6,c(80,95))
+ 
+
